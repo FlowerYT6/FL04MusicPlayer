@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Flower_r4sr0 Music Player</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background: #111;
+      font-family: 'Segoe UI', sans-serif;
+      color: #fff;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+    }
+
+    .player {
+      background: #1a1a1a;
+      border-radius: 20px;
+      padding: 20px;
+      width: 90%;
+      max-width: 400px;
+      box-shadow: 0 0 15px #00ffff99;
+      text-align: center;
+      position: relative;
+    }
+
+    .album-art {
+      width: 100%;
+      max-width: 200px;
+      height: 200px;
+      object-fit: cover;
+      border-radius: 15px;
+      margin: 10px auto;
+      display: block;
+    }
+
+    .info h3, .info p {
+      margin: 5px 0;
+    }
+
+    .controls {
+      margin-top: 15px;
+    }
+
+    .time {
+      font-size: 0.9em;
+      display: flex;
+      justify-content: space-between;
+      width: 100%;
+    }
+
+    .slider {
+      width: 100%;
+      accent-color: #00ffff;
+    }
+
+    button {
+      background: #00ffff;
+      border: none;
+      border-radius: 50%;
+      width: 60px;
+      height: 60px;
+      font-size: 1.5em;
+      color: #000;
+      cursor: pointer;
+      box-shadow: 0 0 10px #00ffffaa;
+    }
+
+    .menu-btn {
+      position: absolute;
+      top: 15px;
+      right: 15px;
+      background: none;
+      border: none;
+      color: white;
+      font-size: 1.5em;
+      cursor: pointer;
+    }
+
+    .menu {
+      display: none;
+      background: #222;
+      position: absolute;
+      top: 50px;
+      right: 15px;
+      border-radius: 8px;
+      box-shadow: 0 0 10px #000;
+      z-index: 1;
+    }
+
+    .menu button {
+      background: none;
+      border: none;
+      color: white;
+      padding: 10px 20px;
+      width: 100%;
+      text-align: left;
+      font-size: 1em;
+    }
+
+    .menu button:hover {
+      background: #333;
+    }
+
+    .equalizer {
+      display: none;
+      margin-top: 10px;
+    }
+
+    .eq-band {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin: 5px;
+    }
+
+    .eq-band input[type="range"] {
+      writing-mode: bt-lr;
+      height: 80px;
+    }
+
+    audio {
+      display: none;
+    }
+
+    .eq-container {
+      display: flex;
+      justify-content: space-between;
+    }
+  </style>
+</head>
+<body>
+  <div class="player">
+    <button class="menu-btn" onclick="toggleMenu()">⋮</button>
+    <div class="menu" id="menu">
+      <button onclick="showMetadata()">Show Full Metadata</button>
+      <button onclick="editMetadata()">Edit Metadata</button>
+      <button onclick="toggleEqualizer()">Equalizer</button>
+    </div>
+
+    <h2>🎶 Audio Player</h2>
+    <input type="file" id="fileInput" accept="audio/*">
+    <img id="albumArt" class="album-art" src="" alt="Album Cover" style="display: none;">
+
+    <div class="info">
+      <h3 id="songTitle">Unknown Title</h3>
+      <p id="songArtist">Unknown Artist</p>
+    </div>
+
+    <audio id="audio"></audio>
+
+    <div class="controls">
+      <button onclick="togglePlay()" id="playBtn">▶️</button>
+      <div class="time">
+        <span id="currentTime">00:00</span>
+        <span id="duration">00:00</span>
+      </div>
+      <input type="range" id="seekBar" class="slider" value="0">
+      <input type="range" id="volumeBar" class="slider" min="0" max="1" step="0.01" value="1">
+    </div>
+
+    <div class="equalizer" id="equalizer">
+      <h4>🎚️ Equalizer</h4>
+      <div class="eq-container">
+        <!-- Equalizer bands -->
+        <div class="eq-band"><label>60Hz</label><input type="range" min="-30" max="30" value="0" step="1" data-freq="60"></div>
+        <div class="eq-band"><label>170Hz</label><input type="range" min="-30" max="30" value="0" step="1" data-freq="170"></div>
+        <div class="eq-band"><label>350Hz</label><input type="range" min="-30" max="30" value="0" step="1" data-freq="350"></div>
+        <div class="eq-band"><label>1kHz</label><input type="range" min="-30" max="30" value="0" step="1" data-freq="1000"></div>
+        <div class="eq-band"><label>3.5kHz</label><input type="range" min="-30" max="30" value="0" step="1" data-freq="3500"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/jsmediatags@3.9.7/dist/jsmediatags.min.js"></script>
+  <script>
+    const audio = document.getElementById('audio');
+    const fileInput = document.getElementById('fileInput');
+    const currentTime = document.getElementById('currentTime');
+    const duration = document.getElementById('duration');
+    const seekBar = document.getElementById('seekBar');
+    const volumeBar = document.getElementById('volumeBar');
+    const playBtn = document.getElementById('playBtn');
+    const titleEl = document.getElementById('songTitle');
+    const artistEl = document.getElementById('songArtist');
+    const albumArt = document.getElementById('albumArt');
+    const eqContainer = document.getElementById('equalizer');
+
+    let fullMetadata = {};
+    let audioContext, source, gainNode;
+    const filters = [];
+
+    const freqs = [60, 170, 350, 1000, 3500];
+
+    fileInput.addEventListener('change', function () {
+      const file = this.files[0];
+      if (!file) return;
+
+      const url = URL.createObjectURL(file);
+      audio.src = url;
+      audio.load();
+      audio.play();
+      playBtn.textContent = '⏸️';
+
+      setupAudioContext();
+
+      jsmediatags.read(file, {
+        onSuccess: function(tag) {
+          const tags = tag.tags;
+          fullMetadata = tags;
+          titleEl.textContent = tags.title || 'Unknown Title';
+          artistEl.textContent = tags.artist || 'Unknown Artist';
+
+          if (tags.picture) {
+            const { data, format } = tags.picture;
+            let base64String = "";
+            data.forEach(byte => base64String += String.fromCharCode(byte));
+            albumArt.src = `data:${format};base64,${btoa(base64String)}`;
+            albumArt.style.display = 'block';
+          } else {
+            albumArt.style.display = 'none';
+          }
+        },
+        onError: function(error) {
+          console.log("Metadata error:", error);
+        }
+      });
+    });
+
+    function togglePlay() {
+      if (audio.paused) {
+        audio.play();
+        playBtn.textContent = '⏸️';
+      } else {
+        audio.pause();
+        playBtn.textContent = '▶️';
+      }
+    }
+
+    audio.addEventListener('loadedmetadata', () => {
+      duration.textContent = formatTime(audio.duration);
+      seekBar.max = audio.duration;
+    });
+
+    audio.addEventListener('timeupdate', () => {
+      currentTime.textContent = formatTime(audio.currentTime);
+      seekBar.value = audio.currentTime;
+    });
+
+    seekBar.addEventListener('input', () => {
+      audio.currentTime = seekBar.value;
+    });
+
+    volumeBar.addEventListener('input', () => {
+      audio.volume = volumeBar.value;
+    });
+
+    function formatTime(time) {
+      const minutes = Math.floor(time / 60);
+      const seconds = Math.floor(time % 60).toString().padStart(2, '0');
+      return `${minutes}:${seconds}`;
+    }
+
+    function toggleMenu() {
+      const menu = document.getElementById('menu');
+      menu.style.display = (menu.style.display === 'block') ? 'none' : 'block';
+    }
+
+    function showMetadata() {
+      alert(`Full Metadata:\n\nTitle: ${fullMetadata.title || 'N/A'}\nArtist: ${fullMetadata.artist || 'N/A'}\nAlbum: ${fullMetadata.album || 'N/A'}\nGenre: ${fullMetadata.genre || 'N/A'}\nYear: ${fullMetadata.year || 'N/A'}`);
+    }
+
+    function editMetadata() {
+      alert("⚠️ Editing tags not supported in-browser. Try using a desktop tag editor like MP3Tag.");
+    }
+
+    function toggleEqualizer() {
+      eqContainer.style.display = eqContainer.style.display === 'block' ? 'none' : 'block';
+    }
+
+    function setupAudioContext() {
+      if (!audioContext) {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        source = audioContext.createMediaElementSource(audio);
+        let lastNode = source;
+
+        freqs.forEach((freq, i) => {
+          const filter = audioContext.createBiquadFilter();
+          filter.type = 'peaking';
+          filter.frequency.value = freq;
+          filter.Q.value = 1;
+          filter.gain.value = 0;
+          lastNode.connect(filter);
+          filters.push(filter);
+          lastNode = filter;
+        });
+
+        lastNode.connect(audioContext.destination);
+
+        document.querySelectorAll('.eq-band input').forEach(slider => {
+          slider.addEventListener('input', () => {
+            const freq = parseInt(slider.dataset.freq);
+            const filter = filters.find(f => f.frequency.value === freq);
+            if (filter) filter.gain.value = slider.value;
+          });
+        });
+      }
+    }
+  </script>
+</body>
+</html>
